@@ -444,10 +444,8 @@ load_plugin(struct tep_handle *tep, const char *path,
 	    const char *file, void *data)
 {
 	struct tep_plugin_list **plugin_list = data;
-	struct tep_plugin_option *options;
 	tep_plugin_load_func func;
 	struct tep_plugin_list *list;
-	const char *alias;
 	char *plugin;
 	void *handle;
 	int ret;
@@ -463,20 +461,6 @@ load_plugin(struct tep_handle *tep, const char *path,
 		tep_warning("could not load plugin '%s'\n%s\n",
 			    plugin, dlerror());
 		goto out_free;
-	}
-
-	alias = dlsym(handle, TEP_PLUGIN_ALIAS_NAME);
-	if (!alias)
-		alias = file;
-
-	options = dlsym(handle, TEP_PLUGIN_OPTIONS_NAME);
-	if (options) {
-		while (options->name) {
-			ret = update_option(alias, options);
-			if (ret < 0)
-				goto out_close;
-			options++;
-		}
 	}
 
 	func = dlsym(handle, TEP_PLUGIN_LOADER_NAME);
