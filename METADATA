@@ -1,0 +1,14 @@
+name: "libtraceevent"
+description:
+    "libtraceevent is a library that provides APIs to access and configure "
+    "kernel trace events through the tracefs filesystem."
+
+third_party {
+  url {
+    type: GIT
+    value: "https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git"
+  }
+  version: "libtraceevent-1.5.2"
+  last_upgrade_date { year: 2022 month: 5 day: 02 }
+  license_type: RESTRICTED
+}
