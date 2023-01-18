@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 # libtraceevent version
 EP_VERSION = 1
-EP_PATCHLEVEL = 6
-EP_EXTRAVERSION = dev
+EP_PATCHLEVEL = 7
+EP_EXTRAVERSION = 1
 EVENT_PARSE_VERSION = $(EP_VERSION).$(EP_PATCHLEVEL).$(EP_EXTRAVERSION)
 
 MAKEFLAGS += --no-print-directory
@@ -46,8 +46,8 @@ endif
 
 libdir_relative ?= $(libdir_relative_temp)
 prefix ?= /usr/local
-libdir = $(prefix)/$(libdir_relative)
-man_dir = $(prefix)/share/man
+libdir ?= $(prefix)/$(libdir_relative)
+man_dir ?= $(prefix)/share/man
 man_dir_SQ = '$(subst ','\'',$(man_dir))'
 pkgconfig_dir ?= $(word 1,$(shell $(PKG_CONFIG) 		\
 			--variable pc_path pkg-config | tr ":" " "))
@@ -130,7 +130,7 @@ else
   CFLAGS := -g -Wall
 endif
 
-LIBS = -ldl
+LIBS ?= -ldl
 export LIBS
 
 set_plugin_dir := 1
@@ -163,6 +163,9 @@ endif
 override CFLAGS += -fPIC
 override CFLAGS += $(CONFIG_FLAGS) $(INCLUDES) $(PLUGIN_DIR_SQ)
 override CFLAGS += $(udis86-flags) -D_GNU_SOURCE
+
+# Make sure 32 bit stat() works on large file systems
+override CFLAGS += -D_FILE_OFFSET_BITS=64
 
 ifeq ($(VERBOSE),1)
   Q =
@@ -378,7 +381,7 @@ uninstall: $(BUILD_OUTPUT)/build_uninstall
 	@$(foreach file,$(shell cat $(BUILD_OUTPUT)/build_uninstall),$(call uninstall_file,$(file)))
 
 PHONY += doc
-doc:
+doc: check_doc
 	$(Q)$(call descend,$(src)/Documentation,)
 
 PHONY += doc-clean
@@ -388,6 +391,9 @@ doc-clean:
 PHONY += doc-install
 doc-install:
 	$(Q)$(call descend,$(src)/Documentation,install)
+
+check_doc: force
+	$(Q)$(src)/check-manpages.sh $(src)/Documentation
 
 
 PHONY += doc-uninstall
