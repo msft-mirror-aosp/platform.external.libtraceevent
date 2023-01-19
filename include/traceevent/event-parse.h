@@ -14,6 +14,10 @@
 
 #include "trace-seq.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef __maybe_unused
 #define __maybe_unused __attribute__((unused))
 #endif
@@ -240,6 +244,7 @@ enum tep_print_arg_type {
 	TEP_PRINT_BITMASK,
 	TEP_PRINT_DYNAMIC_ARRAY_LEN,
 	TEP_PRINT_HEX_STR,
+	TEP_PRINT_CPUMASK,
 };
 
 struct tep_print_arg {
@@ -523,6 +528,9 @@ struct tep_format_field *tep_find_any_field(struct tep_event *event, const char 
 const char *tep_find_function(struct tep_handle *tep, unsigned long long addr);
 unsigned long long
 tep_find_function_address(struct tep_handle *tep, unsigned long long addr);
+int tep_find_function_info(struct tep_handle *tep, unsigned long long addr,
+			   const char **name, unsigned long long *start,
+			   unsigned long *size);
 unsigned long long tep_read_number(struct tep_handle *tep, const void *ptr, int size);
 int tep_read_number_field(struct tep_format_field *field, const void *data,
 			  unsigned long long *value);
@@ -593,6 +601,8 @@ void tep_free(struct tep_handle *tep);
 void tep_ref(struct tep_handle *tep);
 void tep_unref(struct tep_handle *tep);
 int tep_get_ref(struct tep_handle *tep);
+
+struct kbuffer *tep_kbuffer(struct tep_handle *tep);
 
 /* for debugging */
 void tep_print_funcs(struct tep_handle *tep);
@@ -774,8 +784,40 @@ enum tep_loglevel {
 };
 void tep_set_loglevel(enum tep_loglevel level);
 
+/*
+ * Part of the KVM plugin. Will pass the current @event and @record
+ * as well as a pointer to the address to a guest kernel function.
+ * This is currently a weak function defined in the KVM plugin and
+ * should never be called. But a tool can override it, and this will
+ * be called when the kvm plugin has an address it needs the function
+ * name of.
+ *
+ * This function should return the function name for the given address
+ * and optionally, it can update @paddr to include the start of the function
+ * such that the kvm plugin can include an offset.
+ *
+ * For an application to be able to override the weak version in the
+ * plugin, it must be compiled with the gcc -rdynamic option that will
+ * allow the dynamic linker to use the application's function to
+ * override this callback.
+ */
+const char *tep_plugin_kvm_get_func(struct tep_event *event,
+				    struct tep_record *record,
+				    unsigned long long *paddr);
+
+/*
+ * tep_plugin_kvm_put_func() is another weak function that can be used
+ * to call back into the application if the function name returned by
+ * tep_plugin_kvm_get_func() needs to be freed.
+ */
+void tep_plugin_kvm_put_func(const char *func);
+
 /* DEPRECATED */
 void tep_print_field(struct trace_seq *s, void *data,
 		     struct tep_format_field *field);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _PARSE_EVENTS_H */
