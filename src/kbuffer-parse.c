@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+
+#include <sys/utsname.h>
 
 #include "kbuffer.h"
 
@@ -13,6 +16,9 @@
 #define MISSING_STORED (1UL << 30)
 
 #define COMMIT_MASK ((1 << 27) - 1)
+
+/* Absolute time stamps do not have the 5 MSB, take from the real time stamp */
+#define TS_MSB		(0xf8ULL << 56)
 
 enum {
 	KBUFFER_FL_HOST_BIG_ENDIAN	= (1<<0),
@@ -156,6 +162,24 @@ static int calc_index(struct kbuffer *kbuf, void *ptr)
 
 static int __next_event(struct kbuffer *kbuf);
 
+/*
+ * Just because sizeof(long) is 4 bytes, doesn't mean the OS isn't
+ * 64bits
+ */
+static bool host_is_32bit(void)
+{
+	struct utsname buf;
+	int ret;
+
+	ret = uname(&buf);
+	if (ret < 0) {
+		/* Oh well, just assume it is 32 bit */
+		return true;
+	}
+	/* If the uname machine value contains 64, assume the kernel is 64 bit */
+	return strstr(buf.machine, "64") == NULL;
+}
+
 /**
  * kbuffer_alloc - allocat a new kbuffer
  * @size;	enum to denote size of word
@@ -172,6 +196,10 @@ kbuffer_alloc(enum kbuffer_long_size size, enum kbuffer_endian endian)
 	switch (size) {
 	case KBUFFER_LSIZE_4:
 		break;
+	case KBUFFER_LSIZE_SAME_AS_HOST:
+		if (sizeof(long) != 8 && host_is_32bit())
+			break;
+		/* fallthrough */
 	case KBUFFER_LSIZE_8:
 		flags |= KBUFFER_FL_LONG_8;
 		break;
@@ -181,6 +209,7 @@ kbuffer_alloc(enum kbuffer_long_size size, enum kbuffer_endian endian)
 
 	switch (endian) {
 	case KBUFFER_ENDIAN_LITTLE:
+	case KBUFFER_ENDIAN_SAME_AS_HOST:
 		break;
 	case KBUFFER_ENDIAN_BIG:
 		flags |= KBUFFER_FL_BIG_ENDIAN;
@@ -195,8 +224,11 @@ kbuffer_alloc(enum kbuffer_long_size size, enum kbuffer_endian endian)
 
 	kbuf->flags = flags;
 
-	if (host_is_bigendian())
+	if (host_is_bigendian()) {
+		if (endian == KBUFFER_ENDIAN_SAME_AS_HOST)
+			flags |= KBUFFER_FL_BIG_ENDIAN;
 		kbuf->flags |= KBUFFER_FL_HOST_BIG_ENDIAN;
+	}
 
 	if (do_swap(kbuf)) {
 		kbuf->read_8 = __read_8_sw;
@@ -347,7 +379,7 @@ static unsigned int
 translate_data(struct kbuffer *kbuf, void *data, void **rptr,
 	       unsigned long long *delta, int *length)
 {
-	unsigned long long extend;
+	unsigned long long extend, msb = 0;
 	unsigned int type_len_ts;
 	unsigned int type_len;
 
@@ -362,13 +394,15 @@ translate_data(struct kbuffer *kbuf, void *data, void **rptr,
 		*length = read_4(kbuf, data);
 		break;
 
-	case KBUFFER_TYPE_TIME_EXTEND:
 	case KBUFFER_TYPE_TIME_STAMP:
+		msb = kbuf->timestamp & TS_MSB;
+		/* fall through */
+	case KBUFFER_TYPE_TIME_EXTEND:
 		extend = read_4(kbuf, data);
 		data += 4;
 		extend <<= TS_SHIFT;
 		extend += *delta;
-		*delta = extend;
+		*delta = extend | msb;
 		*length = 0;
 		break;
 
