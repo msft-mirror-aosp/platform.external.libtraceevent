@@ -1232,9 +1232,11 @@ static enum tep_event_type __read_token(struct tep_handle *tep, char **tok)
 	switch (type) {
 	case TEP_EVENT_NEWLINE:
 	case TEP_EVENT_DELIM:
-		if (asprintf(tok, "%c", ch) < 0)
+		*tok = malloc(2);
+		if (!*tok)
 			return TEP_EVENT_ERROR;
-
+		(*tok)[0] = ch;
+		(*tok)[1] = '\0';
 		return type;
 
 	case TEP_EVENT_OP:
@@ -2195,21 +2197,24 @@ static int set_op_prio(struct tep_print_arg *arg)
 	return arg->op.prio;
 }
 
-static int consolidate_op_arg(struct tep_print_arg *arg)
+static int consolidate_op_arg(enum tep_event_type type, struct tep_print_arg *arg)
 {
 	unsigned long long val, left, right;
 	int ret = 0;
+
+	if (type == TEP_EVENT_ERROR)
+		return -1;
 
 	if (arg->type != TEP_PRINT_OP)
 		return 0;
 
 	if (arg->op.left)
-		ret = consolidate_op_arg(arg->op.left);
+		ret = consolidate_op_arg(type, arg->op.left);
 	if (ret < 0)
 		return ret;
 
 	if (arg->op.right)
-		ret = consolidate_op_arg(arg->op.right);
+		ret = consolidate_op_arg(type, arg->op.right);
 	if (ret < 0)
 		return ret;
 
@@ -2583,7 +2588,7 @@ static int alloc_and_process_delim(struct tep_event *event, char *next_token,
 	if (type == TEP_EVENT_OP) {
 		type = process_op(event, field, &token);
 
-		if (consolidate_op_arg(field) < 0)
+		if (consolidate_op_arg(type, field) < 0)
 			type = TEP_EVENT_ERROR;
 
 		if (type == TEP_EVENT_ERROR)
@@ -2959,7 +2964,7 @@ process_fields(struct tep_event *event, struct tep_print_flag_sym **list, char *
 		free_arg(arg);
 		arg = alloc_arg();
 		if (!arg)
-			goto out_free;
+			goto out_free_field;
 
 		free_token(token);
 		type = process_arg(event, arg, &token);
@@ -3522,7 +3527,7 @@ process_sizeof(struct tep_event *event, struct tep_print_arg *arg, char **tok)
 	struct tep_format_field *field;
 	enum tep_event_type type;
 	char *token = NULL;
-	bool ok = false;
+	bool token_has_paren = false;
 	int ret;
 
 	type = read_token_item(event->tep, &token);
@@ -3537,11 +3542,12 @@ process_sizeof(struct tep_event *event, struct tep_print_arg *arg, char **tok)
 		if (type == TEP_EVENT_ERROR)
 			goto error;
 
+		/* If it's not an item (like "long") then do not process more */
 		if (type != TEP_EVENT_ITEM)
-			ok = true;
+			token_has_paren = true;
 	}
 
-	if (ok || strcmp(token, "int") == 0) {
+	if (token_has_paren || strcmp(token, "int") == 0) {
 		arg->atom.atom = strdup("4");
 
 	} else if (strcmp(token, "long") == 0) {
@@ -3563,7 +3569,7 @@ process_sizeof(struct tep_event *event, struct tep_print_arg *arg, char **tok)
 				goto error;
 			}
 			/* The token is the next token */
-			ok = true;
+			token_has_paren = true;
 		}
 	} else if (strcmp(token, "REC") == 0) {
 
@@ -3586,13 +3592,14 @@ process_sizeof(struct tep_event *event, struct tep_print_arg *arg, char **tok)
 		if (ret < 0)
 			goto error;
 
-	} else if (!ok) {
+	} else {
 		goto error;
 	}
 
-	if (!ok) {
+	if (!token_has_paren) {
+		/* The token contains the last item before the parenthesis */
 		free_token(token);
-		type = read_token_item(event->tep, tok);
+		type = read_token_item(event->tep, &token);
 	}
 	if (test_type_token(type, token,  TEP_EVENT_DELIM, ")"))
 		goto error;
@@ -3730,8 +3737,19 @@ process_arg_token(struct tep_event *event, struct tep_print_arg *arg,
 		arg->atom.atom = atom;
 		break;
 
-	case TEP_EVENT_DQUOTE:
 	case TEP_EVENT_SQUOTE:
+		arg->type = TEP_PRINT_ATOM;
+		/* Make characters into numbers */
+		if (asprintf(&arg->atom.atom, "%d", token[0]) < 0) {
+			free_token(token);
+			*tok = NULL;
+			arg->atom.atom = NULL;
+			return TEP_EVENT_ERROR;
+		}
+		free_token(token);
+		type = read_token_item(event->tep, &token);
+		break;
+	case TEP_EVENT_DQUOTE:
 		arg->type = TEP_PRINT_ATOM;
 		arg->atom.atom = token;
 		type = read_token_item(event->tep, &token);
@@ -3801,7 +3819,7 @@ static int event_read_print_args(struct tep_event *event, struct tep_print_arg *
 			type = process_op(event, arg, &token);
 			free_token(token);
 
-			if (consolidate_op_arg(arg) < 0)
+			if (consolidate_op_arg(type, arg) < 0)
 				type = TEP_EVENT_ERROR;
 
 			if (type == TEP_EVENT_ERROR) {
@@ -5177,10 +5195,9 @@ static struct tep_print_arg *make_bprint_args(char *fmt, void *data, int size, s
 				ls = 2;
 				goto process_again;
 			case '0' ... '9':
-				goto process_again;
 			case '.':
-				goto process_again;
 			case '#':
+			case '+':
 				goto process_again;
 			case 'z':
 			case 'Z':
@@ -6441,6 +6458,7 @@ static int parse_arg_format(struct tep_print_parse **parse,
 		case '.':
 		case '0' ... '9':
 		case '-':
+		case '+':
 			break;
 		case '*':
 			/* The argument is the length. */
@@ -6484,6 +6502,7 @@ static int parse_arg_format(struct tep_print_parse **parse,
 			*arg = (*arg)->next;
 			ret++;
 			return ret;
+		case 'c':
 		case 'd':
 		case 'u':
 		case 'i':
@@ -6867,6 +6886,21 @@ const char *tep_data_comm_from_pid(struct tep_handle *tep, int pid)
 
 	comm = find_cmdline(tep, pid);
 	return comm;
+}
+
+/**
+ * tep_record_is_event - return true if the given record is the given event
+ * @record: The record to see is the @event
+ * @event: The event to test against @record
+ *
+ * Returns true if the record is of the given event, false otherwise
+ */
+bool tep_record_is_event(struct tep_record *record, struct tep_event *event)
+{
+	int type;
+
+	type = tep_data_type(event->tep, record);
+	return event->id == type;
 }
 
 static struct tep_cmdline *
