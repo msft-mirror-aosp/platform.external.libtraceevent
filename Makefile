@@ -114,7 +114,7 @@ EXTRAVERSION	= $(EP_EXTRAVERSION)
 OBJ		= $@
 N		=
 
-LIBTRACEEVENT_STATIC = $(bdir)/libtraceevent.a
+LIBTRACEEVENT_STATIC ?= $(bdir)/libtraceevent.a
 LIBTRACEEVENT_SHARED = $(bdir)/libtraceevent.so.$(EVENT_PARSE_VERSION)
 
 EP_HEADERS_DIR = $(src)/include/traceevent
