@@ -2498,6 +2498,10 @@ process_op(struct tep_event *event, struct tep_print_arg *arg, char **tok)
 
 		/* higher prios need to be closer to the root */
 		prio = get_op_prio(*tok);
+		if (prio < 0) {
+			token = *tok;
+			goto out_free;
+		}
 
 		if (prio > arg->op.prio)
 			return process_op(event, arg, tok);
