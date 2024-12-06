@@ -8505,6 +8505,14 @@ struct tep_handle *tep_alloc(void)
 	if (tep) {
 		tep->ref_count = 1;
 		tep->host_bigendian = tep_is_bigendian();
+
+		/*
+		 * We can make the following safe assumption
+		 * for the default case. Else it leaves the
+		 * file endianness as little endian and breaks
+		 * things on big endian architectures.
+		 */
+		tep->file_bigendian = tep->host_bigendian;
 	}
 
 	return tep;
