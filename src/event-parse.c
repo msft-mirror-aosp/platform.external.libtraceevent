@@ -7841,7 +7841,7 @@ static enum tep_errno parse_format(struct tep_event **eventp,
 	ret = event_read_format(event);
 	if (ret < 0) {
 		ret = TEP_ERRNO__READ_FORMAT_FAILED;
-		goto event_parse_failed;
+		goto event_alloc_failed;
 	}
 
 	/*
