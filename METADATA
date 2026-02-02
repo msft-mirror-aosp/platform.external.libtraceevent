@@ -14,7 +14,7 @@ third_party {
   identifier {
     type: "Git"
     value: "https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git"
-    version: "02325e4f9b1f72ed71ee7051197a4397c358850f"
+    version: "bd47bd544c9ebc9f44bd88c2b2f2049230741058"
     closest_version: "libtraceevent-1.8.4"
   }
 }
